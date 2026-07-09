@@ -1,0 +1,1537 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Från Transistor till CPU</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --panel2: #1f2733;
+    --accent: #58e08c;
+    --accent2: #58a6ff;
+    --warn: #ff7b72;
+    --text: #e6edf3;
+    --dim: #8b949e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    min-height: 100vh;
+  }
+  header {
+    display: flex; justify-content: space-between; align-items: center;
+    flex-wrap: wrap; gap: 8px;
+    padding: 14px 18px;
+    background: var(--panel);
+    border-bottom: 2px solid var(--accent);
+    position: sticky; top: 0; z-index: 10;
+  }
+  header h1 { font-size: 1.1rem; color: var(--accent); font-family: monospace; }
+  .hud { display: flex; gap: 14px; font-family: monospace; font-size: 0.95rem; }
+  .hud span b { color: var(--accent2); }
+  main { max-width: 720px; margin: 0 auto; padding: 20px 14px 60px; }
+
+  .card {
+    background: var(--panel); border: 1px solid #30363d; border-radius: 12px;
+    padding: 18px; margin-bottom: 14px;
+  }
+  .level-card {
+    display: flex; align-items: center; gap: 14px; cursor: pointer;
+    transition: transform .15s, border-color .15s;
+  }
+  .level-card:hover:not(.locked) { transform: translateX(6px); border-color: var(--accent); }
+  .level-card.locked { opacity: 0.45; cursor: not-allowed; }
+  .level-card .num {
+    font-family: monospace; font-size: 1.3rem; color: var(--accent);
+    background: var(--panel2); border-radius: 10px; min-width: 50px; height: 50px;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .level-card.done .num { background: var(--accent); color: #04140a; }
+  .level-card h3 { font-size: 1rem; margin-bottom: 3px; }
+  .level-card p { font-size: 0.85rem; color: var(--dim); }
+
+  .lesson {
+    background: var(--panel2); border-left: 4px solid var(--accent2);
+    padding: 14px; border-radius: 8px; margin-bottom: 16px;
+    font-size: 0.95rem; line-height: 1.55;
+  }
+  .lesson b { color: var(--accent2); }
+  .task-title { font-family: monospace; color: var(--accent); margin-bottom: 12px; font-size: 1.02rem; line-height: 1.5; }
+
+  button {
+    font-family: inherit; font-size: 1rem; cursor: pointer;
+    background: var(--panel2); color: var(--text);
+    border: 1px solid #30363d; border-radius: 8px; padding: 10px 18px;
+    transition: background .15s, border-color .15s;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #04140a; font-weight: bold; border: none; }
+  button.primary:hover { filter: brightness(1.1); }
+  button.small { font-size: 0.82rem; padding: 6px 12px; }
+
+  .switch {
+    width: 64px; height: 32px; border-radius: 20px; position: relative;
+    background: #3a3f47; border: 2px solid #555; cursor: pointer; flex-shrink: 0;
+    transition: background .2s;
+  }
+  .switch::after {
+    content: ''; position: absolute; top: 2px; left: 2px;
+    width: 24px; height: 24px; border-radius: 50%;
+    background: #ccc; transition: left .2s;
+  }
+  .switch.on { background: var(--accent); border-color: var(--accent); }
+  .switch.on::after { left: 34px; background: #04140a; }
+  .switch-wrap { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .switch-wrap label { font-size: 0.75rem; color: var(--dim); font-family: monospace; }
+
+  .circuit {
+    display: flex; align-items: center; justify-content: center;
+    flex-wrap: wrap; gap: 4px; padding: 24px 6px; margin: 10px 0;
+    background: var(--panel2); border-radius: 10px;
+  }
+  .wire { width: 28px; height: 4px; background: #6e7681; border-radius: 2px; }
+  .node { font-size: 2rem; }
+  .lamp { font-size: 2.4rem; filter: grayscale(1) brightness(0.5); transition: filter .25s; }
+  .lamp.lit { filter: none; text-shadow: 0 0 22px #ffd54a, 0 0 44px #ffd54a; }
+  .branch { display: flex; flex-direction: column; gap: 14px; border-left: 4px solid #6e7681; border-right: 4px solid #6e7681; border-radius: 6px; padding: 8px 0; }
+  .branch-row { display: flex; align-items: center; gap: 4px; padding: 0 4px; }
+
+  .gate-box {
+    display: flex; align-items: center; justify-content: center; gap: 14px;
+    flex-wrap: wrap; padding: 20px 8px; background: var(--panel2); border-radius: 10px; margin: 10px 0;
+  }
+  .gate-shape {
+    font-family: monospace; font-size: 1.15rem; font-weight: bold; color: var(--accent2);
+    border: 2px solid var(--accent2); border-radius: 0 30px 30px 0;
+    padding: 18px 20px;
+  }
+  .expr {
+    font-family: monospace; font-size: 1.15rem; color: var(--accent2);
+    text-align: center; background: #0a0d12; border-radius: 8px; padding: 12px; margin: 10px 0;
+  }
+  .led {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: #3a3f47; border: 2px solid #555; transition: all .2s;
+  }
+  .led.on { background: var(--accent); box-shadow: 0 0 18px var(--accent); border-color: var(--accent); }
+  .led.err { background: var(--warn); box-shadow: 0 0 18px var(--warn); border-color: var(--warn); }
+  .inputs-col { display: flex; flex-direction: column; gap: 12px; }
+  .inputs-row { display: flex; gap: 18px; justify-content: center; flex-wrap: wrap; margin: 14px 0; }
+
+  table { border-collapse: collapse; margin: 10px auto; font-family: monospace; font-size: 1rem; }
+  th, td { border: 1px solid #30363d; padding: 7px 16px; text-align: center; }
+  th { background: var(--panel2); color: var(--accent2); }
+  td.out { color: var(--accent); font-weight: bold; }
+  .choices { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 12px; }
+
+  .bits { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; margin: 14px 0; }
+  .bit-wrap { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .bit {
+    width: 44px; height: 50px; font-family: monospace; font-size: 1.4rem; font-weight: bold;
+    background: var(--panel2); border: 2px solid #30363d; border-radius: 8px; color: var(--dim);
+  }
+  .bit.on { background: var(--accent); color: #04140a; border-color: var(--accent); }
+  .bit.opcode { border-color: var(--accent2); }
+  .bit-wrap small { color: var(--dim); font-family: monospace; font-size: 0.68rem; }
+  .big-num { font-family: monospace; font-size: 1.5rem; color: var(--accent2); text-align: center; margin: 8px 0; }
+  .sep { width: 3px; height: 50px; background: var(--accent2); border-radius: 2px; align-self: flex-start; margin-top: 0; }
+
+  .ram { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 14px 0; }
+  .cell { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .cell small { font-family: monospace; color: var(--dim); }
+  .cell input, .answer-input {
+    width: 64px; height: 48px; text-align: center; font-family: monospace; font-size: 1.3rem;
+    background: var(--panel2); color: var(--text); border: 2px solid #30363d; border-radius: 8px;
+  }
+  .cell input:focus, .answer-input:focus { outline: none; border-color: var(--accent2); }
+  .mem-val {
+    width: 56px; height: 48px; display: flex; align-items: center; justify-content: center;
+    font-family: monospace; font-size: 1.2rem; font-weight: bold;
+    background: var(--panel2); border: 2px solid #30363d; border-radius: 8px; color: var(--text);
+    transition: all .2s;
+  }
+  .mem-val.written { border-color: var(--accent); box-shadow: 0 0 12px var(--accent); color: var(--accent); }
+  .prog {
+    font-family: monospace; background: #0a0d12; border-radius: 8px;
+    padding: 12px; margin: 10px 0; font-size: 0.93rem; line-height: 1.9; overflow-x: auto;
+  }
+  .prog .line { padding: 2px 8px; border-radius: 4px; white-space: pre; }
+  .prog .line.active { background: var(--accent2); color: #04140a; font-weight: bold; }
+  .prog .line.done-line { color: var(--dim); }
+  .reg-display {
+    font-family: monospace; font-size: 1.05rem; text-align: center;
+    background: var(--panel2); border-radius: 8px; padding: 10px; margin: 10px 0;
+  }
+  .reg-display b { color: var(--accent); }
+  .op-table { font-size: 0.9rem; }
+
+  textarea.code {
+    width: 100%; min-height: 190px; font-family: monospace; font-size: 0.95rem;
+    background: #0a0d12; color: var(--text); border: 1px solid #30363d; border-radius: 8px;
+    padding: 10px; resize: vertical; line-height: 1.6;
+  }
+  textarea.code:focus { outline: none; border-color: var(--accent2); }
+  .challenge-item {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--panel2); border-radius: 8px; padding: 8px 12px; margin-bottom: 6px;
+    font-size: 0.9rem;
+  }
+  .challenge-item .mark {
+    font-family: monospace; font-size: 1.1rem; min-width: 26px; height: 26px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 50%; background: #30363d; color: var(--dim); flex-shrink: 0;
+  }
+  .challenge-item.done .mark { background: var(--accent); color: #04140a; }
+  .challenge-item.done { border-left: 3px solid var(--accent); }
+
+  #feedback {
+    min-height: 30px; text-align: center; font-weight: bold; margin: 12px 0;
+    font-size: 1rem;
+  }
+  #feedback.ok { color: var(--accent); }
+  #feedback.bad { color: var(--warn); }
+
+  .actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 10px; }
+  .progress-dots { display: flex; gap: 6px; justify-content: center; margin-bottom: 12px; flex-wrap: wrap; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; background: #30363d; }
+  .dot.done { background: var(--accent); }
+  .dot.current { background: var(--accent2); }
+
+  .confetti-piece {
+    position: fixed; top: -20px; font-size: 1.4rem; z-index: 100;
+    animation: fall linear forwards; pointer-events: none;
+  }
+  @keyframes fall { to { transform: translateY(110vh) rotate(720deg); } }
+
+  .victory { text-align: center; padding: 30px 10px; }
+  .victory h2 { color: var(--accent); font-size: 1.5rem; margin-bottom: 12px; }
+  .center { text-align: center; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>&lt;/&gt; Från Transistor till CPU</h1>
+  <div class="hud">
+    <span>Poäng: <b id="score">0</b></span>
+    <span>Nivå: <b id="lvl-ind">–</b></span>
+  </div>
+</header>
+
+<main id="main"></main>
+
+<script>
+// ---------- Globalt tillstånd ----------
+let score = 0;
+let unlocked = 0;
+let completed = [];
+let current = -1;
+
+const $main = document.getElementById('main');
+const $score = document.getElementById('score');
+const $lvl = document.getElementById('lvl-ind');
+
+function addScore(n) { score = Math.max(0, score + n); $score.textContent = score; }
+
+function h(tag, cls, html) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (html !== undefined) e.innerHTML = html;
+  return e;
+}
+
+function feedback(msg, ok) {
+  const f = document.getElementById('feedback');
+  if (!f) return;
+  f.textContent = msg;
+  f.className = ok ? 'ok' : 'bad';
+}
+
+function confetti() {
+  const emojis = ['⚡','💡','✨','🎉','🟢','🔵'];
+  for (let i = 0; i < 24; i++) {
+    const p = h('span', 'confetti-piece', emojis[Math.floor(Math.random()*emojis.length)]);
+    p.style.left = Math.random()*100 + 'vw';
+    p.style.animationDuration = (1.5 + Math.random()*1.5) + 's';
+    document.body.appendChild(p);
+    setTimeout(() => p.remove(), 3200);
+  }
+}
+
+function shuffle(a) { return a.slice().sort(() => Math.random() - 0.5); }
+
+// ---------- Logikgrindar ----------
+const GATES = {
+  AND:  (a,b) => a & b,
+  OR:   (a,b) => a | b,
+  XOR:  (a,b) => a ^ b,
+  NAND: (a,b) => (a & b) ? 0 : 1,
+  NOR:  (a,b) => (a | b) ? 0 : 1,
+  XNOR: (a,b) => (a ^ b) ? 0 : 1,
+  NOT:  (a)   => a ? 0 : 1
+};
+
+// ---------- Hjälpkomponenter ----------
+function makeSwitch(label, initial, onChange) {
+  const wrap = h('div', 'switch-wrap');
+  const btn = h('div', 'switch' + (initial ? ' on' : ''));
+  btn.onclick = () => { btn.classList.toggle('on'); onChange(); };
+  wrap.appendChild(btn);
+  wrap.appendChild(h('label', '', label));
+  wrap.getValue = () => btn.classList.contains('on') ? 1 : 0;
+  wrap.setValue = (v) => { btn.classList.toggle('on', !!v); };
+  return wrap;
+}
+
+function makeBitRow(weights, opts) {
+  opts = opts || {};
+  const div = h('div', 'bits');
+  const bits = [];
+  weights.forEach((w, i) => {
+    if (opts.separatorAt === i) div.appendChild(h('div', 'sep'));
+    const wrap = h('div', 'bit-wrap');
+    const b = h('button', 'bit' + (opts.opcodeCount && i < opts.opcodeCount ? ' opcode' : ''), '0');
+    b.onclick = () => {
+      b.classList.toggle('on');
+      b.textContent = b.classList.contains('on') ? '1' : '0';
+      if (opts.onChange) opts.onChange();
+    };
+    bits.push(b);
+    wrap.appendChild(b);
+    wrap.appendChild(h('small', '', w));
+    div.appendChild(wrap);
+  });
+  return {
+    el: div,
+    getSum: () => bits.reduce((s, b, i) => s + (b.classList.contains('on') ? Number(weights[i]) : 0), 0),
+    getString: () => bits.map(b => b.classList.contains('on') ? '1' : '0').join('')
+  };
+}
+
+// ---------- Nivådefinitioner ----------
+const levels = [
+  {
+    title: 'Transistorn – datorns byggsten',
+    desc: 'Brytare som styr ström',
+    lesson: `En dator innehåller <b>miljarder transistorer</b>. En transistor är egentligen bara en pytteliten <b>elektrisk brytare</b>: PÅ (1) eller AV (0). Allt en dator gör – spel, musik, AI – är i grunden transistorer som slås på och av miljarder gånger per sekund. Brytare i <b>serie</b> kräver att alla är på (AND), brytare <b>parallellt</b> kräver bara en (OR). Testa själv!`,
+    start: startLevel1
+  },
+  {
+    title: 'Logikgrindar',
+    desc: 'AND, OR, NOT – transistorernas språk',
+    lesson: `Genom att koppla ihop transistorer bygger man <b>logikgrindar</b>. <b>AND</b> ger 1 bara om <i>båda</i> ingångarna är 1. <b>OR</b> ger 1 om <i>minst en</i> är 1. <b>NOT</b> vänder på signalen. <b>XOR</b> ger 1 om ingångarna är <i>olika</i>. <b>NAND</b>/<b>NOR</b> är AND/OR följt av NOT. Vissa utmaningar har extra villkor – läs noga!`,
+    start: startLevel2
+  },
+  {
+    title: 'Gissa grinden',
+    desc: 'Läs sanningstabeller som ett proffs',
+    lesson: `En <b>sanningstabell</b> visar exakt vad en grind gör för varje kombination av ingångar. Nu vänder vi på steken: du får se tabellen – kan du lista ut <b>vilken grind</b> det är? Nytt i denna version: <b>XNOR</b> (ger 1 om ingångarna är <i>lika</i>).`,
+    start: startLevel3
+  },
+  {
+    title: 'Kombinerade kretsar',
+    desc: 'Flera grindar i samma krets',
+    lesson: `Riktiga chip består av <b>tusentals sammankopplade grindar</b>. Utgången från en grind blir ingång till nästa. Här får du kretsar med flera grindar – ställ in ingångarna A, B och C så att slututgången blir rätt. Ibland finns extra villkor som tvingar dig att verkligen förstå kretsen!`,
+    start: startLevel4combo
+  },
+  {
+    title: 'Binära tal & hexadecimalt',
+    desc: 'Räkna som en dator',
+    lesson: `Datorn räknar <b>binärt</b>: varje bit är värd 1, 2, 4, 8, 16, 32, 64 eller 128. Åtta bitar = en <b>byte</b> (0–255). Programmerare skriver ofta binärt kompakt som <b>hexadecimalt</b> (bas 16) med siffrorna 0–9 och A–F, där A=10, B=11 ... F=15. En byte blir exakt två hexsiffror: <b>0x2F</b> = 2·16 + 15 = 47. Sista omgången är i hex!`,
+    start: startLevelBinary
+  },
+  {
+    title: 'Adderaren',
+    desc: 'Grindar som räknar matte',
+    lesson: `Kopplar man ihop XOR- och AND-grindar får man en <b>adderare</b> – kretsen som gör all matematik i din CPU! Regeln: 0+0=0, 0+1=1, 1+1=10 (noll, med <b>minnessiffra</b> 1 till nästa position). Nu med större tal – 5 bitar per term. Håll ordning på minnessiffrorna!`,
+    start: startLevelAdder
+  },
+  {
+    title: 'Negativa tal',
+    desc: 'Tvåkomplement – minus utan minustecken',
+    lesson: `Hur lagrar man <b>−5</b> när det bara finns ettor och nollor? Med <b>tvåkomplement</b>! I ett 4-bitars tal är den översta biten värd <b>−8</b> istället för +8. Då blir 1101 = −8+4+1 = <b>−3</b>, och 1111 = −8+4+2+1 = <b>−1</b>. Talområdet blir −8 till +7. Genialt: samma adderarkrets funkar för både plus och minus!`,
+    start: startLevelTwosComp
+  },
+  {
+    title: 'Minnescellen – SR-latch',
+    desc: 'Hur grindar kan minnas',
+    lesson: `Hur kan grindar <b>komma ihåg</b> något? Genom <b>återkoppling</b>: två NOR-grindar där varandras utgångar kopplas tillbaka som ingångar bildar en <b>SR-latch</b>. <b>S</b> (Set) lagrar en 1:a, <b>R</b> (Reset) nollställer. Det magiska: när båda är AV <i>behåller</i> kretsen sitt värde Q! Det är så datorns snabbaste minne (register och cache) fungerar. OBS: S och R samtidigt är förbjudet!`,
+    start: startLevelLatch
+  },
+  {
+    title: 'Minnet (RAM)',
+    desc: 'Lagra och hämta data på adresser',
+    lesson: `Datorns <b>arbetsminne (RAM)</b> är som ett skåp med numrerade lådor. Varje låda har en <b>adress</b> och lagrar ett tal. CPU:n kan <b>skriva</b> till en adress och <b>läsa</b> från den. Skrivs ett nytt värde försvinner det gamla! Läsning ändrar däremot ingenting. Utför instruktionerna och fyll i minnets slutinnehåll.`,
+    start: startLevelRAM
+  },
+  {
+    title: 'CPU:n – kör program!',
+    desc: 'Fetch, decode, execute',
+    lesson: `En <b>CPU</b> hämtar instruktioner ur minnet (<b>fetch</b>), tolkar dem (<b>decode</b>) och utför dem (<b>execute</b>). Den har ett <b>register A</b> – en supersnabb minnescell inuti CPU:n (byggd av latchar som du nyss lärde dig!). Instruktioner: <b>LOAD #n</b> (lägg n i A), <b>ADD #n</b> / <b>SUB #n</b>, <b>ADD [x]</b> (addera värdet på adress x), <b>STORE [x]</b> (spara A till adress x). Följ programmet steg för steg!`,
+    start: startLevelCPU
+  },
+  {
+    title: 'Hopp & loopar',
+    desc: 'Instruktioner som styr flödet',
+    lesson: `Det som gör datorer <i>kraftfulla</i> är att program kan <b>hoppa</b>! <b>JMP rad</b> hoppar alltid till en rad. <b>JNZ rad</b> (Jump if Not Zero) hoppar bara om A ≠ 0. <b>JGZ rad</b> hoppar bara om A &gt; 0. Med bakåthopp får man <b>loopar</b> – samma kod körs om och om igen. Följ programmen noga i huvudet och svara på frågorna!`,
+    start: startLevelJumps
+  },
+  {
+    title: 'Maskinkod',
+    desc: 'Instruktioner som ettor och nollor',
+    lesson: `CPU:n förstår inte text – varje instruktion lagras som <b>binär maskinkod</b>! I vår mini-CPU är en instruktion 8 bitar: de första 4 är en <b>opkod</b> (vilken instruktion) och de sista 4 en <b>operand</b> (talet/adressen). Opkoder: <b>LOAD=0001, ADD=0010, SUB=0011, STORE=0100, JMP=0101</b>. Exempel: ADD #5 = <b>0010</b> <b>0101</b>. Nu är du en riktig kompilator – översätt åt båda hållen!`,
+    start: startLevelMachineCode
+  },
+  {
+    title: 'Sandlådan – programmera fritt!',
+    desc: 'Skriv egna program och se dem köras',
+    lesson: `Nu får du en <b>hel mini-dator</b> att programmera själv! Skriv program i rutan och se CPU:n köra dem, instruktion för instruktion. Instruktioner: <b>LOAD #n</b> (tal till A), <b>LOAD [x]</b> (läs från adress x), <b>ADD #n / ADD [x]</b>, <b>SUB #n / SUB [x]</b>, <b>STORE [x]</b> (spara A till adress x), <b>JMP rad</b>, <b>JNZ rad</b> (hoppa om A ≠ 0), <b>JGZ rad</b> (hoppa om A &gt; 0) och <b>HALT</b> (stanna). Minnet har adresserna 0–7. Kommentarer skrivs efter <b>;</b>. Hopp går till <b>radnumren i listningen</b> som visas när du kör. Klara de tre utmaningarna för att slutföra spelet – eller experimentera fritt!`,
+    start: startLevelSandbox
+  }
+];
+
+// ---------- Meny ----------
+function showMenu() {
+  current = -1;
+  $lvl.textContent = '–';
+  $main.innerHTML = '';
+  $main.appendChild(h('div', 'card', `<h2 style="color:var(--accent);margin-bottom:6px">Uppdrag: Förstå datorn 🖥️</h2>
+    <p style="color:var(--dim);font-size:0.9rem">Klättra från den minsta transistorn hela vägen upp till att programmera din egen CPU. Klara en nivå för att låsa upp nästa!</p>`));
+
+  levels.forEach((lv, i) => {
+    const locked = i > unlocked;
+    const done = completed.includes(i);
+    const card = h('div', 'card level-card' + (locked ? ' locked' : '') + (done ? ' done' : ''),
+      `<div class="num">${locked ? '🔒' : (done ? '✓' : i+1)}</div>
+       <div><h3>${lv.title}</h3><p>${lv.desc}</p></div>`);
+    if (!locked) card.onclick = () => openLevel(i);
+    $main.appendChild(card);
+  });
+}
+
+function openLevel(i) {
+  current = i;
+  $lvl.textContent = (i+1) + '/' + levels.length;
+  $main.innerHTML = '';
+  const head = h('div', 'card',
+    `<button id="back" style="float:right;font-size:0.8rem;padding:6px 12px">← Karta</button>
+     <h2 style="color:var(--accent);font-size:1.15rem">Nivå ${i+1}: ${levels[i].title}</h2>`);
+  $main.appendChild(head);
+  head.querySelector('#back').onclick = showMenu;
+  $main.appendChild(h('div', 'lesson', levels[i].lesson));
+  const game = h('div', 'card'); game.id = 'game';
+  $main.appendChild(game);
+  levels[i].start(game);
+}
+
+function progressDots(total, cur) {
+  let s = '<div class="progress-dots">';
+  for (let i = 0; i < total; i++)
+    s += `<div class="dot ${i < cur ? 'done' : i === cur ? 'current' : ''}"></div>`;
+  return s + '</div>';
+}
+
+function levelComplete(container) {
+  confetti();
+  addScore(20);
+  if (!completed.includes(current)) completed.push(current);
+  unlocked = Math.max(unlocked, current + 1);
+  if (current === levels.length - 1) { showGrandFinale(container); return; }
+  container.innerHTML = `<div class="victory">
+    <h2>🎉 Nivå klar! +20 bonuspoäng</h2>
+    <div class="actions">
+      <button id="to-menu">Till kartan</button>
+      <button class="primary" id="next-lvl">Nästa nivå →</button>
+    </div></div>`;
+  container.querySelector('#to-menu').onclick = showMenu;
+  container.querySelector('#next-lvl').onclick = () => openLevel(current + 1);
+}
+
+function showGrandFinale(container) {
+  container.innerHTML = `<div class="victory">
+    <h2>🏆 GRATTIS – DU FÖRSTÅR DATORN!</h2>
+    <p style="line-height:1.8;margin:14px 0">Du har rest hela vägen:<br>
+    ⚡ Transistorer → 🔀 Logikgrindar → 📊 Sanningstabeller → 🔗 Kretsar →<br>
+    🔢 Binärt & hex → ➕ Adderare → ➖ Tvåkomplement → 🔒 Latchar →<br>
+    💾 RAM → 🧠 CPU → 🔁 Loopar → 🤖 Maskinkod → 🏖️ Egen programmering!<br><br>
+    Slutpoäng: <b style="color:var(--accent);font-size:1.4rem">${score}</b><br><br>
+    <span style="color:var(--dim)">Psst – sandlådan finns kvar på kartan om du vill fortsätta programmera!</span></p>
+    <div class="actions"><button class="primary" id="restart">Spela igen</button>
+    <button id="to-menu2">Till kartan</button></div></div>`;
+  container.querySelector('#restart').onclick = () => { score = 0; $score.textContent = 0; unlocked = 0; completed = []; showMenu(); };
+  container.querySelector('#to-menu2').onclick = showMenu;
+}
+
+// ========== NIVÅ 1: Transistorn ==========
+function startLevel1(game) {
+  const tasks = [
+    { type: 'single',   text: 'Uppdrag 1/4: Slå på brytaren så att lampan lyser. Det här är exakt vad en transistor gör!' },
+    { type: 'series',   text: 'Uppdrag 2/4: Brytarna sitter i <b>serie</b>. Få lampan att lysa. Detta är grunden till en AND-grind!' },
+    { type: 'parallel', text: 'Uppdrag 3/4: Brytarna sitter <b>parallellt</b>. Få lampan att lysa med <b>bara EN</b> brytare på. Detta är grunden till en OR-grind!' },
+    { type: 'mixed',    text: 'Uppdrag 4/4: Blandad krets! Brytare 1 och 2 sitter i serie – den grenen ligger parallellt med brytare 3. Tänd lampan <b>utan att använda brytare 3</b>.' }
+  ];
+  let ti = 0;
+
+  function render() {
+    const t = tasks[ti];
+    game.innerHTML = progressDots(tasks.length, ti) + `<div class="task-title">${t.text}</div>`;
+    const circuit = h('div', 'circuit');
+    const lamp = h('div', 'lamp node', '💡');
+    const switches = [];
+
+    circuit.appendChild(h('div', 'node', '🔋'));
+    circuit.appendChild(h('div', 'wire'));
+
+    function check() {
+      const v = switches.map(s => s.getValue());
+      let lit = false, solved = false, msg = '';
+      if (t.type === 'single')   { lit = v[0] === 1; solved = lit; }
+      if (t.type === 'series')   { lit = v[0] && v[1]; solved = lit; }
+      if (t.type === 'parallel') {
+        lit = v[0] || v[1]; solved = lit && (v[0] + v[1] === 1);
+        if (lit && !solved) msg = 'Lampan lyser, men använd bara EN brytare!';
+      }
+      if (t.type === 'mixed') {
+        lit = (v[0] && v[1]) || v[2];
+        solved = lit && v[2] === 0;
+        if (lit && !solved) msg = 'Lampan lyser, men du fuskar med brytare 3! 😄';
+      }
+      lamp.classList.toggle('lit', !!lit);
+      if (solved) {
+        addScore(10);
+        feedback('⚡ Rätt! +10 poäng', true);
+        setTimeout(() => { ti++; ti < tasks.length ? render() : levelComplete(game); }, 900);
+      } else feedback(msg, false);
+    }
+
+    if (t.type === 'parallel' || t.type === 'mixed') {
+      const branch = h('div', 'branch');
+      if (t.type === 'parallel') {
+        for (let i = 0; i < 2; i++) {
+          const row = h('div', 'branch-row');
+          row.appendChild(h('div', 'wire'));
+          const sw = makeSwitch('Brytare ' + (i+1), false, check);
+          switches.push(sw); row.appendChild(sw);
+          row.appendChild(h('div', 'wire'));
+          branch.appendChild(row);
+        }
+      } else {
+        const row1 = h('div', 'branch-row');
+        row1.appendChild(h('div', 'wire'));
+        const s1 = makeSwitch('Brytare 1', false, check);
+        const s2 = makeSwitch('Brytare 2', false, check);
+        switches.push(s1, s2);
+        row1.appendChild(s1); row1.appendChild(h('div', 'wire')); row1.appendChild(s2);
+        row1.appendChild(h('div', 'wire'));
+        const row2 = h('div', 'branch-row');
+        row2.appendChild(h('div', 'wire'));
+        const s3 = makeSwitch('Brytare 3', false, check);
+        switches.push(s3);
+        row2.appendChild(s3);
+        row2.appendChild(h('div', 'wire'));
+        branch.appendChild(row1); branch.appendChild(row2);
+      }
+      circuit.appendChild(branch);
+    } else {
+      const n = t.type === 'series' ? 2 : 1;
+      for (let i = 0; i < n; i++) {
+        const sw = makeSwitch('Brytare ' + (i+1), false, check);
+        switches.push(sw); circuit.appendChild(sw);
+        circuit.appendChild(h('div', 'wire'));
+      }
+    }
+    circuit.appendChild(h('div', 'wire'));
+    circuit.appendChild(lamp);
+    game.appendChild(circuit);
+    game.appendChild(h('div', '', '<div id="feedback"></div>'));
+  }
+  render();
+}
+
+// ========== NIVÅ 2: Logikgrindar ==========
+function startLevel2(game) {
+  const challenges = [
+    { g: 'AND',  goal: 1, init: [0,0] },
+    { g: 'OR',   goal: 0, init: [1,0] },
+    { g: 'NOT',  goal: 1, init: [1]   },
+    { g: 'XOR',  goal: 1, init: [0,0] },
+    { g: 'NAND', goal: 0, init: [0,1] },
+    { g: 'NOR',  goal: 1, init: [1,1] },
+    { g: 'XOR',  goal: 0, init: [0,0], constraint: v => v[0] + v[1] >= 1, cText: 'minst en ingång måste vara PÅ' },
+    { g: 'NAND', goal: 1, init: [1,1], constraint: v => v[0] + v[1] >= 1, cText: 'minst en ingång måste vara PÅ' }
+  ];
+  let ci = 0, tries = 0;
+
+  function render() {
+    const c = challenges[ci];
+    tries = 0;
+    game.innerHTML = progressDots(challenges.length, ci) +
+      `<div class="task-title">Utmaning ${ci+1}/${challenges.length}: Ställ in ingångarna så att <b>${c.g}</b>-grindens utgång blir <b style="color:var(--accent2)">${c.goal}</b>${c.cText ? ' <br>⚠️ Villkor: ' + c.cText : ''}</div>`;
+
+    const box = h('div', 'gate-box');
+    const col = h('div', 'inputs-col');
+    const switches = [];
+    const led = h('div', 'led');
+
+    function update() {
+      const v = switches.map(s => s.getValue());
+      const out = c.g === 'NOT' ? GATES.NOT(v[0]) : GATES[c.g](v[0], v[1]);
+      led.classList.toggle('on', out === 1);
+      return out;
+    }
+
+    c.init.forEach((val, i) => {
+      const sw = makeSwitch('In ' + String.fromCharCode(65 + i), !!val, update);
+      switches.push(sw); col.appendChild(sw);
+    });
+
+    box.appendChild(col);
+    box.appendChild(h('div', 'wire'));
+    box.appendChild(h('div', 'gate-shape', c.g));
+    box.appendChild(h('div', 'wire'));
+    const ledWrap = h('div', 'switch-wrap');
+    ledWrap.appendChild(led);
+    ledWrap.appendChild(h('label', '', 'Utgång'));
+    box.appendChild(ledWrap);
+    game.appendChild(box);
+    update();
+
+    game.appendChild(h('div', '', '<div id="feedback"></div>'));
+    const act = h('div', 'actions');
+    const btn = h('button', 'primary', 'Kontrollera ✓');
+    btn.onclick = () => {
+      const v = switches.map(s => s.getValue());
+      const out = update();
+      if (c.constraint && !c.constraint(v)) {
+        tries++;
+        feedback('Villkoret uppfylls inte: ' + c.cText + '!', false);
+        return;
+      }
+      if (out === c.goal) {
+        addScore(tries === 0 ? 15 : 5);
+        feedback(`⚡ Rätt! +${tries === 0 ? 15 : 5} poäng`, true);
+        setTimeout(() => { ci++; ci < challenges.length ? render() : levelComplete(game); }, 900);
+      } else {
+        tries++;
+        feedback(`Inte riktigt – utgången är ${out}, du vill ha ${c.goal}. Prova igen!`, false);
+      }
+    };
+    act.appendChild(btn);
+    game.appendChild(act);
+  }
+  render();
+}
+
+// ========== NIVÅ 3: Gissa grinden ==========
+function startLevel3(game) {
+  const pool = shuffle(['AND','OR','XOR','NAND','NOR','XNOR']);
+  let ri = 0, tries = 0;
+
+  function render() {
+    const g = pool[ri];
+    tries = 0;
+    game.innerHTML = progressDots(pool.length, ri) +
+      `<div class="task-title">Omgång ${ri+1}/${pool.length}: Vilken grind har den här sanningstabellen?</div>`;
+
+    let rows = '';
+    for (const [a, b] of [[0,0],[0,1],[1,0],[1,1]])
+      rows += `<tr><td>${a}</td><td>${b}</td><td class="out">${GATES[g](a,b)}</td></tr>`;
+    game.innerHTML += `<table><tr><th>A</th><th>B</th><th>Ut</th></tr>${rows}</table><div id="feedback"></div>`;
+
+    const choices = h('div', 'choices');
+    ['AND','OR','XOR','NAND','NOR','XNOR'].forEach(name => {
+      const b = h('button', '', name);
+      b.onclick = () => {
+        if (name === g) {
+          addScore(tries === 0 ? 15 : 5);
+          feedback(`⚡ Rätt, det är ${g}! +${tries === 0 ? 15 : 5} poäng`, true);
+          setTimeout(() => { ri++; ri < pool.length ? render() : levelComplete(game); }, 900);
+        } else {
+          tries++;
+          feedback(`Nej, inte ${name}. Jämför raderna noga – börja med A=0, B=0!`, false);
+        }
+      };
+      choices.appendChild(b);
+    });
+    game.appendChild(choices);
+  }
+  render();
+}
+
+// ========== NIVÅ 4: Kombinerade kretsar ==========
+function startLevel4combo(game) {
+  const challenges = [
+    {
+      expr: '(A AND B) OR C',
+      fn: v => (v[0] & v[1]) | v[2],
+      goal: 1,
+      constraint: v => v[2] === 0, cText: 'C måste vara AV'
+    },
+    {
+      expr: '(A OR B) AND (NOT C)',
+      fn: v => (v[0] | v[1]) & (v[2] ? 0 : 1),
+      goal: 1,
+      constraint: v => v[0] + v[1] === 1, cText: 'exakt en av A och B får vara PÅ'
+    },
+    {
+      expr: '(A XOR B) AND C',
+      fn: v => (v[0] ^ v[1]) & v[2],
+      goal: 1
+    },
+    {
+      expr: '(A NAND B) OR (NOT C)',
+      fn: v => ((v[0] & v[1]) ? 0 : 1) | (v[2] ? 0 : 1),
+      goal: 0
+    },
+    {
+      expr: '(A XOR B) XOR C',
+      fn: v => v[0] ^ v[1] ^ v[2],
+      goal: 1,
+      constraint: v => v[0] + v[1] + v[2] === 3, cText: 'alla tre brytare måste vara PÅ (detta är faktiskt summabiten i en adderare!)'
+    }
+  ];
+  let ci = 0, tries = 0;
+
+  function render() {
+    const c = challenges[ci];
+    tries = 0;
+    game.innerHTML = progressDots(challenges.length, ci) +
+      `<div class="task-title">Krets ${ci+1}/${challenges.length}: Få utgången att bli <b style="color:var(--accent2)">${c.goal}</b>${c.cText ? '<br>⚠️ Villkor: ' + c.cText : ''}</div>
+       <div class="expr">${c.expr} = ?</div>`;
+
+    const row = h('div', 'inputs-row');
+    const switches = [];
+    const led = h('div', 'led');
+
+    function update() {
+      const v = switches.map(s => s.getValue());
+      const out = c.fn(v);
+      led.classList.toggle('on', out === 1);
+      return out;
+    }
+
+    ['A','B','C'].forEach(name => {
+      const sw = makeSwitch(name, false, update);
+      switches.push(sw); row.appendChild(sw);
+    });
+    const ledWrap = h('div', 'switch-wrap');
+    ledWrap.appendChild(led);
+    ledWrap.appendChild(h('label', '', 'Utgång'));
+    row.appendChild(ledWrap);
+    game.appendChild(row);
+    update();
+
+    game.appendChild(h('div', '', '<div id="feedback"></div>'));
+    const act = h('div', 'actions');
+    const btn = h('button', 'primary', 'Kontrollera ✓');
+    btn.onclick = () => {
+      const v = switches.map(s => s.getValue());
+      const out = update();
+      if (c.constraint && !c.constraint(v)) {
+        tries++;
+        feedback('Villkoret uppfylls inte: ' + c.cText + '!', false);
+        return;
+      }
+      if (out === c.goal) {
+        addScore(tries === 0 ? 20 : 8);
+        feedback(`⚡ Rätt! +${tries === 0 ? 20 : 8} poäng`, true);
+        setTimeout(() => { ci++; ci < challenges.length ? render() : levelComplete(game); }, 900);
+      } else {
+        tries++;
+        feedback(`Utgången är ${out}, du vill ha ${c.goal}. Räkna igenom grind för grind!`, false);
+      }
+    };
+    act.appendChild(btn);
+    game.appendChild(act);
+  }
+  render();
+}
+
+// ========== NIVÅ 5: Binära tal & hex ==========
+function startLevelBinary(game) {
+  const targets = [
+    { val: 5 + Math.floor(Math.random() * 10),   hex: false },
+    { val: 20 + Math.floor(Math.random() * 40),  hex: false },
+    { val: 100 + Math.floor(Math.random() * 155), hex: false },
+    { val: 16 * (2 + Math.floor(Math.random() * 13)) + Math.floor(Math.random() * 16), hex: true }
+  ];
+  let ri = 0, tries = 0;
+
+  function toHex(n) { return '0x' + n.toString(16).toUpperCase().padStart(2, '0'); }
+
+  function render() {
+    const t = targets[ri];
+    tries = 0;
+    const label = t.hex ? toHex(t.val) : t.val;
+    game.innerHTML = progressDots(targets.length, ri) +
+      `<div class="task-title">Omgång ${ri+1}/${targets.length}: Bygg talet <b style="color:var(--accent2);font-size:1.3rem">${label}</b> i binärt!${t.hex ? '<br>💡 Tips: första hexsiffran = de fyra vänstra bitarna, andra hexsiffran = de fyra högra.' : ''}</div>`;
+
+    const sumDiv = h('div', 'big-num', 'Din summa: 0');
+    const bitRow = makeBitRow([128,64,32,16,8,4,2,1], {
+      separatorAt: t.hex ? 4 : undefined,
+      onChange: () => {
+        const s = bitRow.getSum();
+        sumDiv.textContent = 'Din summa: ' + s + (t.hex ? '  (' + toHex(s) + ')' : '');
+      }
+    });
+    game.appendChild(bitRow.el);
+    game.appendChild(sumDiv);
+    game.appendChild(h('div', '', '<div id="feedback"></div>'));
+
+    const act = h('div', 'actions');
+    const btn = h('button', 'primary', 'Kontrollera ✓');
+    btn.onclick = () => {
+      const sum = bitRow.getSum();
+      if (sum === t.val) {
+        addScore(tries === 0 ? 15 : 5);
+        feedback(`⚡ Rätt! ${label} = ${t.val.toString(2).padStart(8,'0')} binärt. +${tries === 0 ? 15 : 5} poäng`, true);
+        setTimeout(() => { ri++; ri < targets.length ? render() : levelComplete(game); }, 1300);
+      } else {
+        tries++;
+        feedback(sum > t.val ? `${sum} är för stort – släck en bit!` : `${sum} är för litet – tänd fler bitar!`, false);
+      }
+    };
+    act.appendChild(btn);
+    game.appendChild(act);
+  }
+  render();
+}
+
+// ========== NIVÅ 6: Adderaren ==========
+function startLevelAdder(game) {
+  const rounds = [];
+  for (let i = 0; i < 2; i++)
+    rounds.push([1 + Math.floor(Math.random() * 15), 1 + Math.floor(Math.random() * 15)]);
+  for (let i = 0; i < 2; i++)
+    rounds.push([8 + Math.floor(Math.random() * 24), 8 + Math.floor(Math.random() * 24)]);
+  let ri = 0, tries = 0;
+
+  function bin(n, w) { return n.toString(2).padStart(w, '0'); }
+
+  function render() {
+    const [a, b] = rounds[ri];
+    const w = ri < 2 ? 4 : 5;
+    tries = 0;
+    game.innerHTML = progressDots(rounds.length, ri) +
+      `<div class="task-title">Omgång ${ri+1}/${rounds.length}: Addera talen binärt!</div>
+       <div class="big-num" style="line-height:1.8">
+         &nbsp;&nbsp;${bin(a,w)} &nbsp;(${a})<br>
+         + ${bin(b,w)} &nbsp;(${b})<br>
+         <span style="color:var(--dim)">─────────</span>
+       </div>`;
+
+    const weights = [];
+    for (let i = w; i >= 0; i--) weights.push(1 << i);
+    const bitRow = makeBitRow(weights, {});
+    game.appendChild(bitRow.el);
+    game.appendChild(h('div', '', '<div id="feedback"></div>'));
+
+    const act = h('div', 'actions');
+    const btn = h('button', 'primary', 'Kontrollera ✓');
+    btn.onclick = () => {
+      const sum = bitRow.getSum();
+      if (sum === a + b) {
+        addScore(tries === 0 ? 15 : 5);
+        feedback(`⚡ Rätt! ${a} + ${b} = ${a+b} = ${bin(a+b, w+1)}. +${tries === 0 ? 15 : 5} poäng`, true);
+        setTimeout(() => { ri++; ri < rounds.length ? render() : levelComplete(game); }, 1300);
+      } else {
+        tries++;
+        feedback(`Ditt svar är ${sum} men ${a} + ${b} = ${a+b}. Kom ihåg minnessiffran: 1+1 = 10!`, false);
+      }
+    };
+    act.appendChild(btn);
+    game.appendChild(act);
+  }
+  render();
+}
+
+// ========== NIVÅ 7: Tvåkomplement ==========
+function startLevelTwosComp(game) {
+  const rounds = [
+    { type: 'build', target: -3, hint: '−8 + 4 + 1 = −3' },
+    { type: 'build', target: -6, hint: '−8 + 2 = −6' },
+    { type: 'decode', bits: '1111', ans: -1, hint: '−8 + 4 + 2 + 1 = ?' },
+    { type: 'decode', bits: '1010', ans: -6, hint: '−8 + 2 = ?' },
+    { type: 'build', target: -8, hint: 'Bara en enda bit behövs!' }
+  ];
+  let ri = 0, tries = 0;
+
+  function render() {
+    const r = rounds[ri];
+    tries = 0;
+
+    if (r.type === 'build') {
+      game.innerHTML = progressDots(rounds.length, ri) +
+        `<div class="task-title">Omgång ${ri+1}/${rounds.length}: Bygg talet <b style="color:var(--accent2);font-size:1.3rem">${r.target}</b> med 4 bitar (tvåkomplement)!</div>`;
+      const sumDiv = h('div', 'big-num', 'Ditt tal: 0');
+      const bitRow = makeBitRow([-8, 4, 2, 1], {
+        onChange: () => { sumDiv.textContent = 'Ditt tal: ' + bitRow.getSum(); }
+      });
+      game.appendChild(bitRow.el);
+      game.appendChild(sumDiv);
+      game.appendChild(h('div', '', '<div id="feedback"></div>'));
+      const act = h('div', 'actions');
+      const btn = h('button', 'primary', 'Kontrollera ✓');
+      btn.onclick = () => {
+        if (bitRow.getSum() === r.target) {
+          addScore(tries === 0 ? 15 : 5);
+          feedback(`⚡ Rätt! ${r.target} = ${bitRow.getString()} i tvåkomplement. +${tries === 0 ? 15 : 5} poäng`, true);
+          setTimeout(() => { ri++; ri < rounds.length ? render() : levelComplete(game); }, 1300);
+        } else {
+          tries++;
+          feedback(`Ditt tal är ${bitRow.getSum()}. Tips: ${r.hint}`, false);
+        }
+      };
+      act.appendChild(btn);
+      game.appendChild(act);
+    } else {
+      game.innerHTML = progressDots(rounds.length, ri) +
+        `<div class="task-title">Omgång ${ri+1}/${rounds.length}: Vilket tal (decimalt) är detta 4-bitars tvåkomplementstal?</div>
+         <div class="big-num" style="font-size:2rem">${r.bits}</div>
+         <div class="center"><input class="answer-input" type="number" id="tc-ans" style="width:90px"></div>
+         <div id="feedback"></div>`;
+      const act = h('div', 'actions');
+      const btn = h('button', 'primary', 'Kontrollera ✓');
+      btn.onclick = () => {
+        const v = parseInt(document.getElementById('tc-ans').value, 10);
+        if (v === r.ans) {
+          addScore(tries === 0 ? 15 : 5);
+          feedback(`⚡ Rätt! ${r.bits} = ${r.ans}. +${tries === 0 ? 15 : 5} poäng`, true);
+          setTimeout(() => { ri++; ri < rounds.length ? render() : levelComplete(game); }, 1100);
+        } else {
+          tries++;
+          feedback('Fel. Tips: ' + r.hint + ' (översta biten är värd −8)', false);
+        }
+      };
+      act.appendChild(btn);
+      game.appendChild(act);
+      const inp = document.getElementById('tc-ans');
+      inp.focus();
+      inp.addEventListener('keydown', e => { if (e.key === 'Enter') btn.click(); });
+    }
+  }
+  render();
+}
+
+// ========== NIVÅ 8: SR-latch ==========
+function startLevelLatch(game) {
+  const tasks = [
+    { text: 'Uppdrag 1/3: <b>Lagra en 1:a.</b> Slå på S (Set), och slå sedan AV den igen. Q ska fortfarande vara 1 när båda brytarna är av – kretsen minns!', check: (s, r, q) => s === 0 && r === 0 && q === 1 },
+    { text: 'Uppdrag 2/3: <b>Nollställ minnet.</b> Använd R (Reset) och se till att Q = 0 med båda brytarna av.', check: (s, r, q) => s === 0 && r === 0 && q === 0 },
+    { text: 'Uppdrag 3/3: <b>Lagra en 1:a igen</b> – men du har redan förstått tricket, eller hur? Q = 1 med båda brytarna av.', check: (s, r, q) => s === 0 && r === 0 && q === 1 }
+  ];
+  let ti = 0;
+  let q = 0;
+
+  function render() {
+    const t = tasks[ti];
+    game.innerHTML = progressDots(tasks.length, ti) + `<div class="task-title">${t.text}</div>`;
+
+    const box = h('div', 'gate-box');
+    const ledQ = h('div', 'led');
+    const ledQn = h('div', 'led');
+    let sSw, rSw;
+
+    function update() {
+      const s = sSw.getValue(), r = rSw.getValue();
+      if (s === 1 && r === 1) {
+        ledQ.className = 'led err'; ledQn.className = 'led err';
+        feedback('⚠️ S och R samtidigt är förbjudet – kretsen blir instabil!', false);
+        return;
+      }
+      if (s === 1) q = 1;
+      if (r === 1) q = 0;
+      ledQ.className = 'led' + (q ? ' on' : '');
+      ledQn.className = 'led' + (q ? '' : ' on');
+      feedback('', true);
+    }
+
+    sSw = makeSwitch('S (Set)', false, update);
+    rSw = makeSwitch('R (Reset)', false, update);
+    const col = h('div', 'inputs-col');
+    col.appendChild(sSw); col.appendChild(rSw);
+    box.appendChild(col);
+    box.appendChild(h('div', 'wire'));
+    box.appendChild(h('div', 'gate-shape', 'SR-<br>LATCH'));
+    box.appendChild(h('div', 'wire'));
+    const outCol = h('div', 'inputs-col');
+    const w1 = h('div', 'switch-wrap'); w1.appendChild(ledQ); w1.appendChild(h('label', '', 'Q (minnet)'));
+    const w2 = h('div', 'switch-wrap'); w2.appendChild(ledQn); w2.appendChild(h('label', '', 'Q̄ (inversen)'));
+    outCol.appendChild(w1); outCol.appendChild(w2);
+    box.appendChild(outCol);
+    game.appendChild(box);
+    game.appendChild(h('div', '', '<div id="feedback"></div>'));
+    update();
+
+    const act = h('div', 'actions');
+    const btn = h('button', 'primary', 'Kontrollera ✓');
+    btn.onclick = () => {
+      const s = sSw.getValue(), r = rSw.getValue();
+      if (t.check(s, r, q)) {
+        addScore(15);
+        feedback('⚡ Perfekt! Latchen minns sitt värde. +15 poäng', true);
+        setTimeout(() => { ti++; ti < tasks.length ? render() : levelComplete(game); }, 1000);
+      } else if (s !== 0 || r !== 0) {
+        feedback('Båda brytarna måste vara AV när du kontrollerar – det är då minnet visar sig!', false);
+      } else {
+        feedback(`Q är ${q} men ska vara ${ti === 1 ? 0 : 1}. Använd ${ti === 1 ? 'R (Reset)' : 'S (Set)'} och släpp sedan!`, false);
+      }
+    };
+    act.appendChild(btn);
+    game.appendChild(act);
+  }
+  render();
+}
+
+// ========== NIVÅ 9: RAM ==========
+function startLevelRAM(game) {
+  const rounds = [
+    {
+      prog: ['Skriv talet 7 till adress 0', 'Skriv talet 3 till adress 2', 'Läs adress 0, addera 1, skriv resultatet till adress 1'],
+      expected: [7, 8, 3, 0],
+      hint: 'Adress 3 rörs aldrig – den behåller sitt startvärde 0!'
+    },
+    {
+      prog: ['Skriv talet 5 till adress 1', 'Skriv talet 9 till adress 1 (skriver över!)', 'Kopiera värdet på adress 1 till adress 3'],
+      expected: [0, 9, 0, 9],
+      hint: 'När man skriver till en adress försvinner det gamla värdet!'
+    },
+    {
+      prog: ['Skriv 4 till adress 0', 'Skriv 6 till adress 1', 'Läs adress 0 och adress 1, addera dem, skriv summan till adress 0 (skriver över det gamla!)', 'Läs adress 0, dubbla värdet, skriv resultatet till adress 2'],
+      expected: [10, 6, 20, 0],
+      hint: 'Steg 3 skriver ÖVER adress 0 med 4+6=10. Steg 4 läser sedan det NYA värdet!'
+    },
+    {
+      prog: ['Skriv 3 till adress 0 och 8 till adress 1', 'Byt plats på värdena i adress 0 och 1 – använd adress 3 som tillfällig mellanlagring', '(Efteråt: adress 3 behåller sitt sista värde!)'],
+      expected: [8, 3, 0, 3],
+      hint: 'Klassisk swap: kopiera adress 0 → adress 3, sedan adress 1 → adress 0, sedan adress 3 → adress 1. Adress 3 innehåller kvar en kopia!'
+    }
+  ];
+  let ri = 0, tries = 0;
+
+  function render() {
+    const r = rounds[ri];
+    tries = 0;
+    game.innerHTML = progressDots(rounds.length, ri) +
+      `<div class="task-title">Omgång ${ri+1}/${rounds.length}: Alla minnesceller börjar på 0. Utför instruktionerna och fyll i minnets slutinnehåll:</div>
+       <div class="prog">${r.prog.map((p, i) => `<div class="line">${i+1}. ${p}</div>`).join('')}</div>`;
+
+    const ram = h('div', 'ram');
+    const inputs = [];
+    for (let i = 0; i < 4; i++) {
+      const cell = h('div', 'cell');
+      const inp = document.createElement('input');
+      inp.type = 'number'; inp.value = '0'; inp.min = '0'; inp.max = '99';
+      inputs.push(inp);
+      cell.appendChild(inp);
+      cell.appendChild(h('small', '', 'Adress ' + i));
+      ram.appendChild(cell);
+    }
+    game.appendChild(ram);
+    game.appendChild(h('div', '', '<div id="feedback"></div>'));
+
+    const act = h('div', 'actions');
+    const btn = h('button', 'primary', 'Kontrollera ✓');
+    btn.onclick = () => {
+      const vals = inputs.map(i => parseInt(i.value || '0', 10));
+      if (vals.every((v, i) => v === r.expected[i])) {
+        addScore(tries === 0 ? 20 : 8);
+        feedback(`⚡ Perfekt minneshantering! +${tries === 0 ? 20 : 8} poäng`, true);
+        setTimeout(() => { ri++; ri < rounds.length ? render() : levelComplete(game); }, 1000);
+      } else {
+        tries++;
+        feedback('Inte riktigt. Tips: ' + r.hint, false);
+      }
+    };
+    act.appendChild(btn);
+    game.appendChild(act);
+  }
+  render();
+}
+
+// ========== NIVÅ 10: CPU ==========
+function startLevelCPU(game) {
+  const programs = [
+    {
+      memInit: [0, 0, 0, 0],
+      steps: [
+        { instr: 'LOAD #4',   q: 'Vad innehåller register A nu?', ans: 4,  hint: 'LOAD #4 lägger helt enkelt in talet 4 i A.' },
+        { instr: 'ADD #3',    q: 'Vad innehåller register A nu?', ans: 7,  hint: 'A var 4, addera 3.' },
+        { instr: 'STORE [0]', q: 'Vad finns nu på minnesadress 0?', ans: 7, hint: 'STORE kopierar A:s värde till minnet.' }
+      ]
+    },
+    {
+      memInit: [0, 5, 0, 0],
+      steps: [
+        { instr: 'LOAD #2',   q: 'Vad innehåller register A nu?', ans: 2,  hint: 'A blir 2.' },
+        { instr: 'ADD [1]',   q: 'Vad innehåller register A nu?', ans: 7,  hint: 'Hämta värdet på adress 1 (det är 5) och addera till A.' },
+        { instr: 'SUB #1',    q: 'Vad innehåller register A nu?', ans: 6,  hint: 'A var 7, dra bort 1.' },
+        { instr: 'STORE [2]', q: 'Vad finns nu på minnesadress 2?', ans: 6, hint: 'A:s värde kopieras till adress 2.' }
+      ]
+    },
+    {
+      memInit: [2, 0, 0, 0],
+      steps: [
+        { instr: 'LOAD #3',   q: 'Vad innehåller register A nu?', ans: 3,  hint: 'A blir 3.' },
+        { instr: 'ADD [0]',   q: 'Vad innehåller register A nu?', ans: 5,  hint: 'Adress 0 innehåller 2. A = 3 + 2.' },
+        { instr: 'STORE [3]', q: 'Vad finns nu på minnesadress 3?', ans: 5, hint: 'A kopieras dit.' },
+        { instr: 'ADD [3]',   q: 'Vad innehåller register A nu?', ans: 10, hint: 'Adress 3 innehåller nu 5 – A blir 5 + 5. A adderas med sin egen kopia!' },
+        { instr: 'SUB #4',    q: 'Vad innehåller register A nu?', ans: 6,  hint: '10 − 4.' },
+        { instr: 'STORE [0]', q: 'Vad finns nu på minnesadress 0?', ans: 6, hint: 'Det gamla värdet 2 skrivs över!' }
+      ]
+    }
+  ];
+  let pi = 0;
+
+  function render() {
+    const p = programs[pi];
+    const mem = p.memInit.slice();
+    let si = 0, tries = 0, regA = '?';
+
+    function draw() {
+      const s = p.steps[si];
+      game.innerHTML = progressDots(programs.length, pi) +
+        `<div class="task-title">Program ${pi+1}/${programs.length} – instruktion ${si+1}/${p.steps.length}</div>
+         <div class="reg-display">Register A: <b>${regA}</b> &nbsp;|&nbsp; Minne: [${mem.join(', ')}]</div>
+         <div class="prog">${p.steps.map((st, i) =>
+           `<div class="line ${i === si ? 'active' : i < si ? 'done-line' : ''}">${i === si ? '▶ ' : '  '}${st.instr}</div>`).join('')}</div>
+         <div class="center" style="margin:12px 0"><b>${s.q}</b></div>
+         <div class="center"><input class="answer-input" type="number" id="cpu-ans"></div>
+         <div id="feedback"></div>`;
+
+      const act = h('div', 'actions');
+      const btn = h('button', 'primary', 'Kör instruktionen ▶');
+      btn.onclick = () => {
+        const v = parseInt(document.getElementById('cpu-ans').value, 10);
+        if (v === s.ans) {
+          addScore(tries === 0 ? 15 : 5);
+          if (s.instr.startsWith('STORE')) {
+            const addr = parseInt(s.instr.match(/\[(\d)\]/)[1], 10);
+            mem[addr] = regA;
+          } else {
+            regA = s.ans;
+          }
+          feedback(`⚡ Exakt! Execute klar. +${tries === 0 ? 15 : 5} poäng`, true);
+          setTimeout(() => {
+            si++; tries = 0;
+            if (si < p.steps.length) draw();
+            else { pi++; pi < programs.length ? render() : levelComplete(game); }
+          }, 900);
+        } else {
+          tries++;
+          feedback('Fel svar. Tips: ' + s.hint, false);
+        }
+      };
+      act.appendChild(btn);
+      game.appendChild(act);
+      const inp = document.getElementById('cpu-ans');
+      inp.focus();
+      inp.addEventListener('keydown', e => { if (e.key === 'Enter') btn.click(); });
+    }
+    draw();
+  }
+  render();
+}
+
+// ========== NIVÅ 11: Hopp & loopar ==========
+function startLevelJumps(game) {
+  const programs = [
+    {
+      code: ['0: LOAD #5', '1: JMP 3', '2: ADD #10   ← hoppas denna över?', '3: SUB #1'],
+      questions: [
+        { q: 'Körs rad 2 (ADD #10) någonsin?  Svara 1 för JA, 0 för NEJ.', ans: 0, hint: 'JMP 3 hoppar direkt till rad 3 – rad 2 hoppas över!' },
+        { q: 'Vad är A när programmet är slut?', ans: 4, hint: 'A = 5, sedan hoppar vi förbi ADD, sedan 5 − 1.' }
+      ]
+    },
+    {
+      code: ['0:      LOAD #6', '1: loop: SUB #2', '2:      JNZ loop   (hoppa till rad 1 om A ≠ 0)'],
+      questions: [
+        { q: 'Hur många gånger körs SUB #2 totalt?', ans: 3, hint: '6 → 4 → 2 → 0. Räkna stegen!' },
+        { q: 'Vad är A när programmet är slut?', ans: 0, hint: 'Loopen fortsätter tills A blir exakt 0.' }
+      ]
+    },
+    {
+      code: ['0:      LOAD #8', '1: loop: SUB #3', '2:      JGZ loop   (hoppa till rad 1 om A > 0)'],
+      questions: [
+        { q: 'Hur många gånger körs SUB #3 totalt?', ans: 3, hint: '8 → 5 → 2 → −1. När blir A ≤ 0?' },
+        { q: 'Vad är A när programmet är slut? (kan vara negativt – tvåkomplement!)', ans: -1, hint: 'Sista subtraktionen: 2 − 3 = −1. Sedan hoppar JGZ inte, eftersom −1 inte är > 0.' }
+      ]
+    },
+    {
+      code: ['0:      LOAD #1', '1: loop: ADD [0]    (adress 0 innehåller 1)', '2:      STORE [1]', '3:      SUB #4', '4:      JNZ 5      (hoppa ut om A ≠ 0)', '5:      LOAD #99   ...', '', 'Minne vid start: [1, 0, 0, 0]'],
+      questions: [
+        { q: 'Efter rad 1 första gången: vad är A?', ans: 2, hint: 'A = 1, addera värdet på adress 0 (som är 1).' },
+        { q: 'Efter rad 2: vad finns på minnesadress 1?', ans: 2, hint: 'STORE kopierar A dit.' },
+        { q: 'Efter rad 3: vad är A?', ans: -2, hint: '2 − 4 = −2. Negativa tal, minns du?' }
+      ]
+    }
+  ];
+  let pi = 0;
+
+  function render() {
+    const p = programs[pi];
+    let qi = 0, tries = 0;
+
+    function draw() {
+      const qq = p.questions[qi];
+      game.innerHTML = progressDots(programs.length, pi) +
+        `<div class="task-title">Program ${pi+1}/${programs.length} – fråga ${qi+1}/${p.questions.length}</div>
+         <div class="prog">${p.code.map(l => `<div class="line">${l}</div>`).join('')}</div>
+         <div class="center" style="margin:12px 0"><b>${qq.q}</b></div>
+         <div class="center"><input class="answer-input" type="number" id="jmp-ans" style="width:90px"></div>
+         <div id="feedback"></div>`;
+
+      const act = h('div', 'actions');
+      const btn = h('button', 'primary', 'Svara ✓');
+      btn.onclick = () => {
+        const v = parseInt(document.getElementById('jmp-ans').value, 10);
+        if (v === qq.ans) {
+          addScore(tries === 0 ? 20 : 8);
+          feedback(`⚡ Rätt! +${tries === 0 ? 20 : 8} poäng`, true);
+          setTimeout(() => {
+            qi++; tries = 0;
+            if (qi < p.questions.length) draw();
+            else { pi++; pi < programs.length ? render() : levelComplete(game); }
+          }, 900);
+        } else {
+          tries++;
+          feedback('Fel svar. Tips: ' + qq.hint, false);
+        }
+      };
+      act.appendChild(btn);
+      game.appendChild(act);
+      const inp = document.getElementById('jmp-ans');
+      inp.focus();
+      inp.addEventListener('keydown', e => { if (e.key === 'Enter') btn.click(); });
+    }
+    draw();
+  }
+  render();
+}
+
+// ========== NIVÅ 12: Maskinkod ==========
+function startLevelMachineCode(game) {
+  const OPTABLE = `<table class="op-table">
+    <tr><th>Instruktion</th><th>Opkod</th></tr>
+    <tr><td>LOAD</td><td class="out">0001</td></tr>
+    <tr><td>ADD</td><td class="out">0010</td></tr>
+    <tr><td>SUB</td><td class="out">0011</td></tr>
+    <tr><td>STORE</td><td class="out">0100</td></tr>
+    <tr><td>JMP</td><td class="out">0101</td></tr>
+  </table>`;
+
+  const rounds = [
+    { type: 'enc', instr: 'LOAD #6',  ans: '00010110', hint: 'LOAD = 0001, och 6 = 0110 binärt.' },
+    { type: 'enc', instr: 'ADD #9',   ans: '00101001', hint: 'ADD = 0010, och 9 = 1001 binärt.' },
+    { type: 'dec', bin: '00110100', correct: 'SUB #4',  choices: ['SUB #4', 'STORE [4]', 'ADD #4', 'SUB #3'], hint: 'De fyra första bitarna 0011 = SUB. De fyra sista 0100 = 4.' },
+    { type: 'dec', bin: '01010010', correct: 'JMP 2',   choices: ['STORE [2]', 'JMP 2', 'ADD #10', 'JMP 5'], hint: '0101 = JMP, 0010 = 2.' },
+    { type: 'enc', instr: 'STORE [3]', ans: '01000011', hint: 'STORE = 0100, adress 3 = 0011.' },
+    { type: 'dec', bin: '00011111', correct: 'LOAD #15', choices: ['LOAD #15', 'LOAD #7', 'ADD #15', 'SUB #15'], hint: '0001 = LOAD, 1111 = 15 (det största 4-bitarstalet).' }
+  ];
+  let ri = 0, tries = 0;
+
+  function render() {
+    const r = rounds[ri];
+    tries = 0;
+
+    if (r.type === 'enc') {
+      game.innerHTML = progressDots(rounds.length, ri) +
+        `<div class="task-title">Omgång ${ri+1}/${rounds.length}: Översätt till maskinkod: <b style="color:var(--accent2);font-size:1.15rem">${r.instr}</b><br><span style="color:var(--dim);font-size:0.85rem">Blå ram = opkodens 4 bitar, resten = operanden</span></div>` +
+        OPTABLE;
+      const bitRow = makeBitRow(['op','op','op','op', 8, 4, 2, 1], { separatorAt: 4, opcodeCount: 4 });
+      game.appendChild(bitRow.el);
+      game.appendChild(h('div', '', '<div id="feedback"></div>'));
+      const act = h('div', 'actions');
+      const btn = h('button', 'primary', 'Kompilera ✓');
+      btn.onclick = () => {
+        if (bitRow.getString() === r.ans) {
+          addScore(tries === 0 ? 20 : 8);
+          feedback(`⚡ Kompilerat! ${r.instr} = ${r.ans}. +${tries === 0 ? 20 : 8} poäng`, true);
+          setTimeout(() => { ri++; ri < rounds.length ? render() : levelComplete(game); }, 1300);
+        } else {
+          tries++;
+          feedback('Fel bitmönster. Tips: ' + r.hint, false);
+        }
+      };
+      act.appendChild(btn);
+      game.appendChild(act);
+    } else {
+      game.innerHTML = progressDots(rounds.length, ri) +
+        `<div class="task-title">Omgång ${ri+1}/${rounds.length}: CPU:n har hämtat följande byte ur minnet. Avkoda den – vilken instruktion är det?</div>` +
+        OPTABLE +
+        `<div class="big-num" style="font-size:1.8rem"><span style="color:var(--accent2)">${r.bin.slice(0,4)}</span> ${r.bin.slice(4)}</div>
+         <div id="feedback"></div>`;
+      const choices = h('div', 'choices');
+      shuffle(r.choices).forEach(name => {
+        const b = h('button', '', name);
+        b.onclick = () => {
+          if (name === r.correct) {
+            addScore(tries === 0 ? 20 : 8);
+            feedback(`⚡ Avkodat! ${r.bin} = ${r.correct}. +${tries === 0 ? 20 : 8} poäng`, true);
+            setTimeout(() => { ri++; ri < rounds.length ? render() : levelComplete(game); }, 1300);
+          } else {
+            tries++;
+            feedback('Nej. Tips: ' + r.hint, false);
+          }
+        };
+        choices.appendChild(b);
+      });
+      game.appendChild(choices);
+    }
+  }
+  render();
+}
+
+// ========== NIVÅ 13: Sandlådan ==========
+function startLevelSandbox(game) {
+  const challenges = [
+    { text: 'Utmaning 1: Få minnesadress 0 att innehålla exakt 10 när programmet stannar.', done: false,
+      check: st => st.mem[0] === 10 },
+    { text: 'Utmaning 2: Räkna ut 7 · 6 med en loop och lagra 42 på adress 1. (Det finns ingen multiplikationsinstruktion – använd upprepad addition!)', done: false,
+      check: st => st.mem[1] === 42 && st.backJumps >= 1 },
+    { text: 'Utmaning 3: Skriv ett program där minst 3 bakåthopp tas, och som slutar med A = 0.', done: false,
+      check: st => st.backJumps >= 3 && st.a === 0 }
+  ];
+
+  const examples = [
+    { name: 'Exempel: Enkel start', code:
+`; Skriv ditt program här!
+LOAD #5
+ADD #3
+STORE [0]
+HALT` },
+    { name: 'Exempel: Nedräkning', code:
+`; Nedräkning med loop
+LOAD #9
+SUB #3
+JNZ 1     ; hoppa till rad 1 om A inte är 0
+HALT` },
+    { name: 'Exempel: Multiplikation 2·3', code:
+`; Räknar ut 2 * 3 = 6 till adress 3
+; Adress 7 används som räknare
+LOAD #0
+STORE [3]
+LOAD #3
+STORE [7]
+LOAD [3]  ; <- rad 4, loopen börjar här
+ADD #2
+STORE [3]
+LOAD [7]
+SUB #1
+STORE [7]
+JNZ 4     ; hoppa tillbaka till rad 4
+HALT` }
+  ];
+
+  // --- CPU-tillstånd ---
+  let prog = null, pc = 0, a = 0, steps = 0, backJumps = 0;
+  let mem = new Array(8).fill(0);
+  let timer = null, lastWrite = -1, sessionActive = false;
+
+  // --- Bygg UI (en gång) ---
+  game.innerHTML = `
+    <div class="task-title">🏖️ Din egen mini-dator! Skriv ett program, tryck Kör ▶ och se CPU:n arbeta. Klara alla tre utmaningar för att slutföra spelet.</div>
+    <div id="sb-challenges"></div>
+    <div class="actions" id="sb-examples" style="margin-bottom:8px"></div>
+    <textarea class="code" id="sb-src" spellcheck="false"></textarea>
+    <div class="actions">
+      <button class="primary" id="sb-run">Kör ▶</button>
+      <button id="sb-step">Stega ⏭</button>
+      <button id="sb-stop">Paus ⏸</button>
+      <button id="sb-reset">Återställ ↺</button>
+    </div>
+    <div class="reg-display" id="sb-status">Register A: <b>0</b> &nbsp;|&nbsp; PC: <b>–</b> &nbsp;|&nbsp; Steg: <b>0</b> &nbsp;|&nbsp; Bakåthopp: <b>0</b></div>
+    <div class="ram" id="sb-mem"></div>
+    <div class="prog" id="sb-listing" style="display:none"></div>
+    <div id="feedback"></div>
+    <div class="actions" id="sb-finish"></div>`;
+
+  const $src = game.querySelector('#sb-src');
+  const $listing = game.querySelector('#sb-listing');
+  const $status = game.querySelector('#sb-status');
+  const $memDiv = game.querySelector('#sb-mem');
+  const $chDiv = game.querySelector('#sb-challenges');
+  const $finish = game.querySelector('#sb-finish');
+
+  $src.value = examples[0].code;
+
+  const exDiv = game.querySelector('#sb-examples');
+  examples.forEach(ex => {
+    const b = h('button', 'small', ex.name);
+    b.onclick = () => { stopTimer(); $src.value = ex.code; resetState(); feedback('Exempel laddat – tryck Kör ▶!', true); };
+    exDiv.appendChild(b);
+  });
+
+  // Minnesceller
+  const memCells = [];
+  for (let i = 0; i < 8; i++) {
+    const cell = h('div', 'cell');
+    const val = h('div', 'mem-val', '0');
+    memCells.push(val);
+    cell.appendChild(val);
+    cell.appendChild(h('small', '', '' + i));
+    $memDiv.appendChild(cell);
+  }
+
+  function renderChallenges() {
+    $chDiv.innerHTML = '';
+    challenges.forEach(c => {
+      $chDiv.appendChild(h('div', 'challenge-item' + (c.done ? ' done' : ''),
+        `<div class="mark">${c.done ? '✓' : '○'}</div><div>${c.text}</div>`));
+    });
+    if (challenges.every(c => c.done) && !$finish.hasChildNodes()) {
+      const btn = h('button', 'primary', '🏆 Alla utmaningar klara – slutför spelet!');
+      btn.onclick = () => levelComplete(game);
+      $finish.appendChild(btn);
+      confetti();
+    }
+  }
+  renderChallenges();
+
+  function updateUI() {
+    $status.innerHTML = `Register A: <b>${a}</b> &nbsp;|&nbsp; PC: <b>${sessionActive ? pc : '–'}</b> &nbsp;|&nbsp; Steg: <b>${steps}</b> &nbsp;|&nbsp; Bakåthopp: <b>${backJumps}</b>`;
+    memCells.forEach((c, i) => {
+      c.textContent = mem[i];
+      c.classList.toggle('written', i === lastWrite);
+    });
+    if (prog) {
+      $listing.style.display = 'block';
+      $listing.innerHTML = prog.map((ins, i) =>
+        `<div class="line ${sessionActive && i === pc ? 'active' : ''}">${String(i).padStart(2, ' ')}: ${ins.src}</div>`).join('');
+    } else {
+      $listing.style.display = 'none';
+    }
+  }
+
+  function compile(src) {
+    const out = [];
+    const lines = src.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      let l = lines[i].split(';')[0].trim();
+      if (!l) continue;
+      const u = l.toUpperCase().replace(/\s+/g, ' ');
+      let m, ins = null;
+      if ((m = u.match(/^(LOAD|ADD|SUB) #(-?\d+)$/)))      ins = { op: m[1], mode: 'imm', arg: +m[2] };
+      else if ((m = u.match(/^(LOAD|ADD|SUB) \[(\d+)\]$/))) ins = { op: m[1], mode: 'mem', arg: +m[2] };
+      else if ((m = u.match(/^STORE \[(\d+)\]$/)))          ins = { op: 'STORE', mode: 'mem', arg: +m[1] };
+      else if ((m = u.match(/^(JMP|JNZ|JGZ) (\d+)$/)))      ins = { op: m[1], arg: +m[2] };
+      else if (u === 'HALT')                                ins = { op: 'HALT' };
+      else throw 'Okänd instruktion på rad ' + (i+1) + ': "' + l + '"';
+      if (ins.mode === 'mem' && (ins.arg < 0 || ins.arg > 7))
+        throw 'Ogiltig minnesadress på rad ' + (i+1) + ' – bara 0–7 finns!';
+      ins.src = u;
+      out.push(ins);
+    }
+    if (out.length === 0) throw 'Programmet är tomt – skriv några instruktioner!';
+    for (const ins of out)
+      if ((ins.op === 'JMP' || ins.op === 'JNZ' || ins.op === 'JGZ') && ins.arg > out.length)
+        throw 'Hoppet "' + ins.src + '" pekar utanför programmet (max rad ' + out.length + ')';
+    return out;
+  }
+
+  function resetState() {
+    stopTimer();
+    pc = 0; a = 0; steps = 0; backJumps = 0; lastWrite = -1;
+    mem = new Array(8).fill(0);
+    sessionActive = false;
+    prog = null;
+    updateUI();
+  }
+
+  function stopTimer() {
+    if (timer) { clearInterval(timer); timer = null; }
+  }
+
+  function halt(reason) {
+    stopTimer();
+    sessionActive = false;
+    updateUI();
+    const state = { a: a, mem: mem, backJumps: backJumps };
+    let newly = [];
+    challenges.forEach(c => {
+      if (!c.done && c.check(state)) { c.done = true; newly.push(c); addScore(25); }
+    });
+    renderChallenges();
+    if (newly.length > 0) {
+      confetti();
+      feedback('🏆 Utmaning klarad! +' + (25 * newly.length) + ' poäng! ' + reason, true);
+    } else {
+      feedback('⏹ ' + reason + ' — A = ' + a + ', ' + steps + ' steg, ' + backJumps + ' bakåthopp.', true);
+    }
+  }
+
+  function error(msg) {
+    stopTimer();
+    sessionActive = false;
+    updateUI();
+    feedback('💥 ' + msg, false);
+  }
+
+  function step() {
+    if (!sessionActive) return;
+    if (pc >= prog.length) { halt('Programmet nådde slutet.'); return; }
+    steps++;
+    if (steps > 500) { error('Mer än 500 steg – oändlig loop? Kolla dina hoppvillkor!'); return; }
+    const ins = prog[pc];
+    switch (ins.op) {
+      case 'LOAD':  a = ins.mode === 'imm' ? ins.arg : mem[ins.arg]; pc++; break;
+      case 'ADD':   a += ins.mode === 'imm' ? ins.arg : mem[ins.arg]; pc++; break;
+      case 'SUB':   a -= ins.mode === 'imm' ? ins.arg : mem[ins.arg]; pc++; break;
+      case 'STORE': mem[ins.arg] = a; lastWrite = ins.arg; pc++; break;
+      case 'HALT':  halt('HALT – programmet stannade snyggt.'); return;
+      case 'JMP': case 'JNZ': case 'JGZ': {
+        const taken = ins.op === 'JMP' || (ins.op === 'JNZ' && a !== 0) || (ins.op === 'JGZ' && a > 0);
+        if (taken) { if (ins.arg <= pc) backJumps++; pc = ins.arg; }
+        else pc++;
+        break;
+      }
+    }
+    updateUI();
+  }
+
+  function startSession() {
+    try { prog = compile($src.value); }
+    catch (e) { prog = null; error(String(e)); return false; }
+    pc = 0; a = 0; steps = 0; backJumps = 0; lastWrite = -1;
+    mem = new Array(8).fill(0);
+    sessionActive = true;
+    updateUI();
+    return true;
+  }
+
+  game.querySelector('#sb-run').onclick = () => {
+    stopTimer();
+    if (!startSession()) return;
+    feedback('▶ Kör...', true);
+    timer = setInterval(step, 200);
+  };
+  game.querySelector('#sb-step').onclick = () => {
+    stopTimer();
+    if (!sessionActive) {
+      if (!startSession()) return;
+      feedback('⏭ Stegläge – tryck Stega för varje instruktion.', true);
+      return;
+    }
+    step();
+  };
+  game.querySelector('#sb-stop').onclick = () => {
+    stopTimer();
+    if (sessionActive) feedback('⏸ Pausad – fortsätt med Stega eller börja om med Kör.', true);
+  };
+  game.querySelector('#sb-reset').onclick = () => {
+    resetState();
+    feedback('↺ Återställd. Minne och register nollade.', true);
+  };
+
+  updateUI();
+}
+
+// ---------- Start ----------
+showMenu();
+</script>
+</body>
+</html>
